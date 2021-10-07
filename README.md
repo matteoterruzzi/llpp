@@ -1,5 +1,7 @@
 # llpp
 
+[![Python package](https://github.com/matteoterruzzi/llpp/actions/workflows/python-package.yml/badge.svg)](https://github.com/matteoterruzzi/llpp/actions/workflows/python-package.yml)
+
 I initially wanted to call it "Flyweight Local-Origin Plotter", but the acronym didn't sound promising.
 
 This is a weekend project that I wanted to delve in to accomplish some different desires,
