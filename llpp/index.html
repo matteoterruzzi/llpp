@@ -1,0 +1,246 @@
+<!doctype HTML>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>llpp</title>
+<script src="https://cdn.plot.ly/plotly-2.3.0.min.js"></script>
+<style>
+body, html, #plot {
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+    font-family: sans-serif;
+}
+#ui {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: calc(100vw - 350px);
+    height: 20ex;
+    padding: 3vh 0 0 3vw;
+}
+#station {
+    padding: 0;
+    font-size: 2rem;
+    border: none;
+    width: 100%;
+}
+</style>
+</head>
+<body>
+<div id="plot"></div>
+<div id="ui">
+    <input id="station" type="text" list="stations" placeholder="Select a station!" />
+    <datalist id="stations">
+    </datalist>
+</div>
+<script type="text/javascript">
+
+class LogHandler {
+    constructor(query) {
+        this.stations = [];
+        this.data = {
+            status: null,
+            arrivals: {
+                start: [],
+                end: [],
+                count: [],
+            },
+            departures: {
+                start: [],
+                end: [],
+                count: [],
+                open: [],
+                low: [],
+                high: [],
+                close: [],
+            },
+        };
+
+        this.onData = () => {};
+        this.onStations = () => {};
+
+        this.ws = new WebSocket("ws://localhost:8085/");
+        this.ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if(msg.past && msg.past.station === query.station) {
+                this.data.status = msg.past.status;
+                ['start', 'end', 'count'].forEach((col, i) => {
+                    if (col === 'start' || col === 'end')
+                        this.data.arrivals[col] = msg.past.arrivals.map(row => new Date(row[i]+'Z'))  // UTC to local
+                    else
+                        this.data.arrivals[col] = msg.past.arrivals.map(row => row[i])
+                });
+                ['start', 'end', 'count', 'open', 'low', 'high', 'close', 'mean', 'var'].forEach((col, i) => {
+                    if (col === 'start' || col === 'end')
+                        this.data.departures[col] = msg.past.departures.map(row => new Date(row[i]+'Z'))  // UTC to local
+                    else
+                        this.data.departures[col] = msg.past.departures.map(row => row[i])
+                });
+                this.onData(this.data);
+                console.log(this.data);
+            }
+            else if(msg.log && msg.log[1] === query.station) {
+                // NOTE: will assume that past data was already received.
+                // console.log(msg.log)
+                // TODO: aggregation and update of data
+            }
+            else if(msg.stations && msg.stations instanceof Array) {
+                this.stations = msg.stations;
+                this.onStations(this.stations);
+            }
+        };
+        this.ws.onopen = () => {
+            this.ws.send(JSON.stringify(query));
+        }
+    }
+    close() {
+        this.ws.close();
+    }
+}
+
+
+(new LogHandler('list_stations')).onStations = (stations) => {
+    const ds = document.getElementById('stations');
+    stations.forEach(station => {
+        const opt = document.createElement('option');
+        opt.value = station;
+        ds.appendChild(opt);
+    });
+}
+
+
+const station = document.getElementById('station');
+let handler = null;
+let lastStationValue = null;
+if(window.location.hash){
+    station.value = window.location.hash.substr(1);
+}
+station.addEventListener('keyup', loadPlot);
+station.addEventListener('change', loadPlot);
+loadPlot();
+
+function loadPlot() {
+    console.log('loading plot for', station.value);
+    if((lastStationValue != null && lastStationValue === station.value) || !station.value){
+        return;
+    }
+    lastStationValue = station.value;
+    window.location.hash = station.value;
+
+    if(handler !== null) {
+        handler.close();
+    }
+    handler = new LogHandler({
+        station: station.value
+    });
+    handler.onData = data => {
+        const departures_x = data.departures.start.flatMap((v, i) => [v, data.departures.end[i], null]);
+        Plotly.react('plot', [
+            {
+                type: 'scatter',
+                name: 'range',
+                mode: 'lines',
+                fill: 'toself',
+                line: {color: 'rgba(222,222,222,.1)'},
+                connectgaps: false,
+                x: data.departures.start.flatMap((v, i) => [v, v, data.departures.end[i], data.departures.end[i], null]),
+                y: data.departures.count.flatMap((y, i) => [data.departures.low[i]/1000000, data.departures.high[i]/1000000, data.departures.high[i]/1000000, data.departures.low[i]/1000000, null]),
+            },
+            {
+                type: 'scatter',
+                name: '&plusmn;2&#963;',
+                mode: 'lines',
+                fill: 'toself',
+                line: {color: 'rgba(180,180,222,.1)'},
+                connectgaps: false,
+                x: data.departures.start.flatMap((v, i) => [v, v, data.departures.end[i], data.departures.end[i], null]),
+                y: data.departures.count.flatMap((y, i) => [
+                    Math.max(data.departures.low[i],  data.departures.mean[i]-2*Math.sqrt(data.departures.var[i]))/1000000,
+                    Math.min(data.departures.high[i], data.departures.mean[i]+2*Math.sqrt(data.departures.var[i]))/1000000,
+                    Math.min(data.departures.high[i], data.departures.mean[i]+2*Math.sqrt(data.departures.var[i]))/1000000,
+                    Math.max(data.departures.low[i],  data.departures.mean[i]-2*Math.sqrt(data.departures.var[i]))/1000000, 
+                    null
+                ]),
+            },
+            {
+                type: 'scatter',
+                name: 'mean*',
+                mode: 'lines',
+                line: {color: '#77a'},
+                connectgaps: false,
+                x: departures_x,
+                y: data.departures.mean.map((y, i) => data.departures.count[i] <= 5 ? y : Math.max(data.departures.low[i], y - .5*y/(data.departures.count[i]-1))).flatMap(y => [y/1000000, y/1000000, null]),
+            },
+            {
+                type: 'scatter',
+                name: 'low',
+                mode: 'lines',
+                line: {color: '#eee'},
+                connectgaps: false,
+                x: departures_x,
+                y: data.departures.low.flatMap(y => [y/1000000, y/1000000, null]),
+            },
+            {
+                type: 'scatter',
+                name: 'high',
+                mode: 'lines',
+                line: {color: '#f00'},
+                connectgaps: false,
+                x: departures_x,
+                y: data.departures.high.flatMap(y => [y/1000000, y/1000000, null]),
+            },
+            {
+                type: 'scatter',
+                name: 'arrivals',
+                fill: 'tozeroy',
+                mode: '',
+                line: {color: 'rgba(90,100,140,.1)'},
+                connectgaps: false,
+                x: data.arrivals.start.flatMap((v, i) => [v, v, data.arrivals.end[i], data.arrivals.end[i]]),
+                y: data.arrivals.count.flatMap(y => [0, y, y, 0]),
+                xaxis: 'x',
+                yaxis: 'y2',
+            },
+        ], {
+            grid: {
+                rows: 2,
+                columns: 1,
+                subplots:[['xy'], ['xy2']],
+                roworder:'top to bottom'
+            },
+            title: data.status,
+            showlegend: true,
+            dragmode: 'pan',
+            xaxis: {
+                autorange: true,
+                title: 'Date'
+            }, 
+            yaxis: {
+                autorange: true, 
+                type: 'log',
+                anchor: 'y',
+                domain: [0.25, 1],
+                title: 'Service time [ms]'
+            }, 
+            yaxis2: {
+                autorange: true, 
+                fixedrange: true,
+                type: 'linear',
+                anchor: 'y2',
+                domain: [0, 0.175],
+                title: 'Arrivals'
+            }
+        }, {
+            responsive: true,
+            scrollZoom: true,
+        });
+    }
+}
+
+</script>
+</body>
+</html>
