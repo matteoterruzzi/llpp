@@ -11,7 +11,10 @@ This may also be a proof-of-concept of a tool for application performance monito
 for a particular/unexpected situation where:
 
 * monitoring was not actually a priority (so I was expected to allocate zero resources to the monitoring itself)
-* the web server technology used by the application didn't easily allow to send lots of asynchronous messages to a monitoring service without affecting the application response time.
+* the web server technology used by the application didn't easily allow to send asynchronous messages to a monitoring service without affecting the application response time.
+
+
+## Characteristics
 
 So here is Lightweight Local Performance Plotter and you can count its features:
 
@@ -21,6 +24,9 @@ So here is Lightweight Local Performance Plotter and you can count its features:
 * Be very easy on dependencies: you just need standard Python 3 + websockets
 * Be production-ready and be safe from unexpected side-effects that can come from integrating tools like this.
 
+
+## Rationale
+
 Think of llpp as a collector to offload async telemetry messages from your own application server.
 This is little more than your usual log files, yet it's more (plotting is certainly not a feature of your log file).
 The choice of the UDP protocol is to cut away the 3-way handshake of TCP and keep the overhead to the bare minimum.
@@ -28,6 +34,9 @@ Then llpp may eventually itself offload all the data to something else, if you w
 llpp is so simple that you can take it as a template project for a building block of a larger deployment.
 For example, you may typically have some remote, central monitoring server which may offer much more features, 
 like authorization/authentication, some GUI, advanced filters and queries...
+
+
+## Direction
 
 This project wants to optimize for simplicity and performance at local scale, hence the name.
 Remote operation is out of scope, so is encryption and other non-requirements for this tool.
